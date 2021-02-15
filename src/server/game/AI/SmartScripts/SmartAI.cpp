@@ -780,6 +780,11 @@ void SmartAI::JustSummoned(Creature* creature)
     GetScript()->ProcessEventsFor(SMART_EVENT_SUMMONED_UNIT, creature);
 }
 
+void SmartAI::SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+{
+    GetScript()->ProcessEventsFor(SMART_EVENT_SUMMONED_UNIT_DIES, summon);
+}
+
 void SmartAI::AttackStart(Unit* who)
 {
     // xinef: dont allow charmed npcs to act on their own
@@ -1167,6 +1172,11 @@ void SmartGameObjectAI::EventInform(uint32 eventId)
 void SmartGameObjectAI::SpellHit(Unit* unit, const SpellInfo* spellInfo)
 {
     GetScript()->ProcessEventsFor(SMART_EVENT_SPELLHIT, unit, 0, 0, false, spellInfo);
+}
+
+void SmartGameObjectAI::SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+{
+    GetScript()->ProcessEventsFor(SMART_EVENT_SUMMONED_UNIT_DIES, summon);
 }
 
 class SmartTrigger : public AreaTriggerScript
