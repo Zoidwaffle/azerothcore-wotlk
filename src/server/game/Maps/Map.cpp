@@ -1713,6 +1713,13 @@ void Map::SendObjectUpdates()
     WorldPacket packet;                                     // here we allocate a std::vector with a size of 0x10000
     for (UpdateDataMapType::iterator iter = update_players.begin(); iter != update_players.end(); ++iter)
     {
+        if (!sScriptMgr->OnPlayerbotCheckUpdatesToSend(iter->first))
+        {
+            iter->second.Clear();
+            continue;
+        }
+
+
         iter->second.BuildPacket(packet);
         iter->first->SendDirectMessage(&packet);
         packet.clear();                                     // clean the string
@@ -2717,18 +2724,12 @@ void Map::ProcessRespawns()
 
 void Map::ProcessCreatureRespawn(ObjectGuid::LowType spawnId)
 {
-    // Pool members in non-instanced maps are handled entirely by PoolMgr.
-    // In instanced maps the pool system operates globally and Spawn1Object is
-    // a no-op for instanceable maps, so fall through to the normal per-instance
-    // respawn logic instead.
-    if (!Instanceable())
+    // Pool members are handled entirely by PoolMgr
+    if (uint32 poolId = sPoolMgr->IsPartOfAPool<Creature>(spawnId))
     {
-        if (uint32 poolId = sPoolMgr->IsPartOfAPool<Creature>(spawnId))
-        {
-            sPoolMgr->UpdatePool<Creature>(poolId, spawnId);
-            RemoveCreatureRespawnTime(spawnId);
-            return;
-        }
+        sPoolMgr->UpdatePool<Creature>(poolId, spawnId);
+        RemoveCreatureRespawnTime(spawnId);
+        return;
     }
 
     CreatureData const* data = sObjectMgr->GetCreatureData(spawnId);
@@ -2773,6 +2774,19 @@ void Map::ProcessCreatureRespawn(ObjectGuid::LowType spawnId)
         }
     }
 
+    // Check linked_respawn: don't spawn if the master creature is still dead.
+    // This mirrors the check in Creature::Respawn() for compat-mode creatures.
+    ObjectGuid dbtableHighGuid = ObjectGuid::Create<HighGuid::Unit>(data->id1, spawnId);
+    time_t linkedRespawntime = GetLinkedRespawnTime(dbtableHighGuid);
+    if (linkedRespawntime)
+    {
+        // Master is still dead; re-queue at the master's respawn time + a small offset.
+        time_t now = GameTime::GetGameTime().count();
+        time_t newRespawnTime = (now > linkedRespawntime ? now : linkedRespawntime) + urand(5, MINUTE);
+        SaveCreatureRespawnTime(spawnId, newRespawnTime);
+        return;
+    }
+
     // Remove respawn time BEFORE LoadFromDB, otherwise the creature
     // reads it back and loads as DEAD instead of ALIVE
     RemoveCreatureRespawnTime(spawnId);
@@ -2784,16 +2798,12 @@ void Map::ProcessCreatureRespawn(ObjectGuid::LowType spawnId)
 
 void Map::ProcessGameObjectRespawn(ObjectGuid::LowType spawnId)
 {
-    // Same rationale as ProcessCreatureRespawn: pool management via PoolMgr is
-    // only meaningful for non-instanced maps where Spawn1Object actually spawns.
-    if (!Instanceable())
+    // Pool members are handled entirely by PoolMgr
+    if (uint32 poolId = sPoolMgr->IsPartOfAPool<GameObject>(spawnId))
     {
-        if (uint32 poolId = sPoolMgr->IsPartOfAPool<GameObject>(spawnId))
-        {
-            sPoolMgr->UpdatePool<GameObject>(poolId, spawnId);
-            RemoveGORespawnTime(spawnId);
-            return;
-        }
+        sPoolMgr->UpdatePool<GameObject>(poolId, spawnId);
+        RemoveGORespawnTime(spawnId);
+        return;
     }
 
     GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
